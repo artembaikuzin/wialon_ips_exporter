@@ -49,14 +49,27 @@ var (
 		Name: "wialon_ips_parse_errors_total",
 		Help: "Total number of parse errors",
 	}, []string{"src_ip", "dst_ip"})
+
+	streamLiveSeconds = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name:       "wialon_ips_stream_live_seconds",
+		Help:       "Time stream lives",
+		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.95: 0.005, 0.99: 0.001},
+	})
+
+	streamsGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "wialon_ips_streams_size",
+		Help: "Number of currently active streams",
+	})
 )
 
-// Wialon IPS 1.0 packet types:
+// Wialon IPS 1.0 packet types, https://extapi.wialon.com/hw/cfg/Wialon%20IPS_en.pdf
 var clientPackets = []string{"L", "D", "P", "SD", "B", "I"}
 var serverPackets = []string{"AL", "AD", "AP", "ASD", "AB", "AM", "AI", "US", "UC"}
 var serverAndClientPackets = []string{"M"}
 
 const packetMaxLen = 2
+
+const staleStreamTTLMinutes = 5.0
 
 func packetValid(value string) bool {
 	return slices.Contains(clientPackets, value) ||
@@ -83,6 +96,7 @@ func parsePayload(streamData *StreamData, payload string) {
 	stream.lastAccessAt = time.Now()
 	if !loaded {
 		stream.createdAt = time.Now()
+		streamsGauge.Inc()
 	}
 
 	for _, c := range payload {
@@ -149,10 +163,14 @@ func pruneStaleStreams() {
 		stream := v.(*StreamState)
 
 		stream.mux.Lock()
+		timeNow := time.Now()
 
-		if time.Now().Sub(stream.lastAccessAt).Minutes() > 5.0 {
+		if timeNow.Sub(stream.lastAccessAt).Minutes() > staleStreamTTLMinutes {
 			streams.Delete(k)
 			fmt.Printf("(!) Stream %s DELETED\n", k.(string))
+
+			streamLiveSeconds.Observe(timeNow.Sub(stream.createdAt).Seconds())
+			streamsGauge.Dec()
 		}
 
 		stream.mux.Unlock()
@@ -179,6 +197,8 @@ func startMetricsExporting(metricsAddr string) {
 
 	prometheus.MustRegister(packetCounter)
 	prometheus.MustRegister(parseErrorsCounter)
+	prometheus.MustRegister(streamLiveSeconds)
+	prometheus.MustRegister(streamsGauge)
 
 	http.Handle("/metrics", promhttp.Handler())
 
