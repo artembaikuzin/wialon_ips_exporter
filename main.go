@@ -3,15 +3,69 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
 	"github.com/gopacket/gopacket/pcap"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Packet format:
+const (
+	StreamStart = iota
+	StreamReadPacketType
+	StreamSkipMessage
+)
+
+type StreamData struct {
+	id   string
+	ipv4 *layers.IPv4
+	tcp  *layers.TCP
+}
+
+type StreamState struct {
+	state  int
+	packet string
+
+	createdAt    time.Time
+	lastAccessAt time.Time
+	mux          sync.Mutex
+}
+
+var streams sync.Map
+
+var (
+	packetCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "wialon_ips_packets_total",
+		Help: "Total number of IPS packets",
+	}, []string{"type", "src_ip", "dst_ip"})
+
+	parseErrorsCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "wialon_ips_parse_errors_total",
+		Help: "Total number of parse errors",
+	}, []string{"src_ip", "dst_ip"})
+)
+
+// Wialon IPS 1.0 packet types:
+var clientPackets = []string{"L", "D", "P", "SD", "B", "I"}
+var serverPackets = []string{"AL", "AD", "AP", "ASD", "AB", "AM", "AI", "US", "UC"}
+var serverAndClientPackets = []string{"M"}
+
+const packetMaxLen = 2
+
+func packetValid(value string) bool {
+	return slices.Contains(clientPackets, value) ||
+		slices.Contains(serverPackets, value) ||
+		slices.Contains(serverAndClientPackets, value)
+}
+
+// Message format:
+//
 // #TP#msg\r\n
 //
 // # - start byte
@@ -19,112 +73,127 @@ import (
 // # - separator
 // msg - message
 // \r\n - 0x0d0a
-//
-// Tracker packet types:
-// L - Login
-// D - Data packet
-// P - Ping(heartbeat) packet
-// SD - Short data packet
-// B - Blackbox packet
-// M - Message to driver
-// I - Packet with photo
+func parsePayload(streamData *StreamData, payload string) {
+	s, loaded := streams.LoadOrStore(streamData.id, &StreamState{})
+	stream := s.(*StreamState)
 
-const (
-	ParserInit = iota
-	ParserStartByte
-	ParserPacketType
-	ParserSeparator
-	ParserMessage
-)
+	stream.mux.Lock()
+	defer stream.mux.Unlock()
 
-type State struct {
-	currentState  int
-	currentPacket string
-	lastAccessAt  time.Time
-}
-
-var parserState = make(map[string]*State)
-var parserStateLock = sync.Mutex{}
-
-func parsePackets(stream string, payload string) {
-	parserStateLock.Lock()
-	state, streamExists := parserState[stream]
-
-	if !streamExists {
-		state = &State{}
-		parserState[stream] = state
+	stream.lastAccessAt = time.Now()
+	if !loaded {
+		stream.createdAt = time.Now()
 	}
 
-	state.lastAccessAt = time.Now()
-
-	parserStateLock.Unlock()
-
 	for _, c := range payload {
-		switch state.currentState {
-		case ParserInit:
+		switch stream.state {
+		case StreamStart:
 			if c == '#' {
-				state.currentState = ParserPacketType
+				stream.state = StreamReadPacketType
+				stream.packet = ""
 			}
 
-		case ParserPacketType:
+		case StreamReadPacketType:
 			if c == '#' {
-				state.currentState = ParserMessage
+				if !packetValid(stream.packet) {
+					fmt.Printf("(!) Invalid packet: %s\n", stream.packet)
 
-				fmt.Printf("+%s\n", state.currentPacket)
+					parseErrorsCounter.WithLabelValues(
+						streamData.ipv4.SrcIP.String(),
+						streamData.ipv4.DstIP.String(),
+					).Inc()
 
-				state.currentPacket = ""
+					stream.state = StreamSkipMessage
+
+					continue
+				}
+
+				fmt.Printf("+%s\n", stream.packet)
+
+				packetCounter.WithLabelValues(
+					stream.packet,
+					streamData.ipv4.SrcIP.String(),
+					streamData.ipv4.DstIP.String(),
+				).Inc()
+
+				stream.state = StreamSkipMessage
 
 				continue
 			}
 
-			// TODO: use builder here
-			state.currentPacket = state.currentPacket + string(c)
+			stream.packet = stream.packet + string(c)
 
-		case ParserMessage:
+			if len(stream.packet) > packetMaxLen {
+				fmt.Println("(!) Error parsing packet:", stream.packet)
+
+				parseErrorsCounter.WithLabelValues(
+					streamData.ipv4.SrcIP.String(),
+					streamData.ipv4.DstIP.String(),
+				).Inc()
+
+				stream.state = StreamStart
+			}
+
+		case StreamSkipMessage:
 			if c == '\r' || c == '\n' {
-				state.currentState = ParserInit
+				stream.state = StreamStart
 			}
 		}
 	}
 }
 
-func pruneParserState() {
-	fmt.Println("pruneParserState")
+func pruneStaleStreams() {
+	fmt.Println("pruneStaleStreams")
 
-	parserStateLock.Lock()
-	defer parserStateLock.Unlock()
+	streams.Range(func(k any, v any) bool {
+		stream := v.(*StreamState)
 
-	for stream, state := range parserState {
-		if time.Now().Sub(state.lastAccessAt).Minutes() > 5.0 {
-			delete(parserState, stream)
-			fmt.Printf("(!) Stream %s disconnected\n", stream)
+		stream.mux.Lock()
+
+		if time.Now().Sub(stream.lastAccessAt).Minutes() > 5.0 {
+			streams.Delete(k)
+			fmt.Printf("(!) Stream %s DELETED\n", k.(string))
 		}
-	}
+
+		stream.mux.Unlock()
+
+		return true
+	})
 }
 
-func startPruneParser() {
-	ticker := time.NewTicker(5 * time.Second)
+func startPruningStaleStreams() {
+	ticker := time.NewTicker(30 * time.Second)
 
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
-				pruneParserState()
+				pruneStaleStreams()
 			}
 		}
 	}()
 }
 
-func connectionStream(tcp *layers.TCP, ip4 *layers.IPv4) string {
-	return fmt.Sprintf("%v:%v-%v:%v", ip4.SrcIP, tcp.SrcPort, ip4.DstIP, tcp.DstPort)
+func startMetricsExporting(metricsAddr string) {
+	fmt.Println("Metrics served on", metricsAddr)
+
+	prometheus.MustRegister(packetCounter)
+	prometheus.MustRegister(parseErrorsCounter)
+
+	http.Handle("/metrics", promhttp.Handler())
+
+	go http.ListenAndServe(metricsAddr, nil)
 }
 
 func main() {
 	var iface = flag.String("i", "eth0", "Interface")
-	var pbfFilter = flag.String("f", "tcp port 20332", "BPF filter")
+	var pbfFilter = flag.String("filter", "tcp port 20332", "BPF filter")
+	var metricsAddr = flag.String("metrics-listen-address", "0.0.0.0:9332", "Prometheus exporter metrics listen address")
+
 	flag.Parse()
 
-	startPruneParser()
+	startMetricsExporting(*metricsAddr)
+	startPruningStaleStreams()
 
 	fmt.Println("start OpenLive")
 
@@ -164,12 +233,17 @@ func main() {
 		}
 
 		fmt.Println("----------------------------------------------------------------------------------------------------")
-		payload := string(app.Payload())
-		stream := connectionStream(tcp, ip4)
+		streamData := &StreamData{
+			id:   fmt.Sprintf("%v:%v-%v:%v", ip4.SrcIP, tcp.SrcPort, ip4.DstIP, tcp.DstPort),
+			ipv4: ip4,
+			tcp:  tcp,
+		}
 
-		fmt.Println(stream)
+		payload := string(app.Payload())
+
+		fmt.Println(streamData.id)
 		fmt.Println(payload)
 
-		parsePackets(stream, payload)
+		parsePayload(streamData, payload)
 	}
 }
