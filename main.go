@@ -60,6 +60,11 @@ var (
 		Name: "wialon_ips_streams_size",
 		Help: "Number of currently active streams",
 	})
+
+	totalRawPackets = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "wialon_ips_raw_packets_total",
+		Help: "Total number of packets handled",
+	})
 )
 
 // Wialon IPS 1.0 packet types, https://extapi.wialon.com/hw/cfg/Wialon%20IPS_en.pdf
@@ -198,6 +203,7 @@ func startMetricsExporting(metricsAddr string) {
 	prometheus.MustRegister(parseErrorsCounter)
 	prometheus.MustRegister(streamLiveSeconds)
 	prometheus.MustRegister(streamsGauge)
+	prometheus.MustRegister(totalRawPackets)
 
 	http.Handle("/metrics", promhttp.Handler())
 
@@ -264,5 +270,7 @@ func main() {
 		fmt.Println(payload)
 
 		parsePayload(streamData, payload)
+
+		totalRawPackets.Inc()
 	}
 }
