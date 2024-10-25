@@ -163,13 +163,12 @@ func pruneStaleStreams() {
 		stream := v.(*StreamState)
 
 		stream.mux.Lock()
-		timeNow := time.Now()
 
-		if timeNow.Sub(stream.lastAccessAt).Minutes() > staleStreamTTLMinutes {
+		if time.Now().Sub(stream.lastAccessAt).Minutes() > staleStreamTTLMinutes {
 			streams.Delete(k)
 			fmt.Printf("(!) Stream %s DELETED\n", k.(string))
 
-			streamLiveSeconds.Observe(timeNow.Sub(stream.createdAt).Seconds())
+			streamLiveSeconds.Observe(stream.lastAccessAt.Sub(stream.createdAt).Seconds())
 			streamsGauge.Dec()
 		}
 
