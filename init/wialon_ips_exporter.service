@@ -1,0 +1,11 @@
+[Unit]
+Description=Wialon IPS PCAP based prometheus exporter
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+ExecStart=/usr/local/bin/wialon_ips_exporter
+
+[Install]
+WantedBy=multi-user.target
