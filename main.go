@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"slices"
 	"sync"
@@ -29,8 +30,8 @@ type StreamData struct {
 }
 
 type StreamState struct {
-	state  int
-	packet string
+	state      int
+	packetType string
 
 	createdAt    time.Time
 	lastAccessAt time.Time
@@ -72,11 +73,11 @@ var clientPackets = []string{"L", "D", "P", "SD", "B", "I"}
 var serverPackets = []string{"AL", "AD", "AP", "ASD", "AB", "AM", "AI", "US", "UC"}
 var serverAndClientPackets = []string{"M"}
 
-const packetMaxLen = 2
+const packetTypeMaxLen = 3
 
 const staleStreamTTLMinutes = 5.0
 
-func packetValid(value string) bool {
+func packetTypeValid(value string) bool {
 	return slices.Contains(clientPackets, value) ||
 		slices.Contains(serverPackets, value) ||
 		slices.Contains(serverAndClientPackets, value)
@@ -102,6 +103,8 @@ func parsePayload(streamData *StreamData, payload string) {
 	if !loaded {
 		stream.createdAt = time.Now()
 		streamsGauge.Inc()
+
+		log.Println("Stream ADDED:", streamData.id)
 	}
 
 	for _, c := range payload {
@@ -109,13 +112,13 @@ func parsePayload(streamData *StreamData, payload string) {
 		case StreamStart:
 			if c == '#' {
 				stream.state = StreamReadPacketType
-				stream.packet = ""
+				stream.packetType = ""
 			}
 
 		case StreamReadPacketType:
 			if c == '#' {
-				if !packetValid(stream.packet) {
-					fmt.Printf("(!) Invalid packet: %s\n", stream.packet)
+				if !packetTypeValid(stream.packetType) {
+					log.Println("(!) Invalid packet type:", stream.packetType)
 
 					parseErrorsCounter.WithLabelValues(
 						streamData.ipv4.SrcIP.String(),
@@ -127,10 +130,8 @@ func parsePayload(streamData *StreamData, payload string) {
 					continue
 				}
 
-				fmt.Printf("+%s\n", stream.packet)
-
 				packetCounter.WithLabelValues(
-					stream.packet,
+					stream.packetType,
 					streamData.ipv4.SrcIP.String(),
 					streamData.ipv4.DstIP.String(),
 				).Inc()
@@ -140,10 +141,10 @@ func parsePayload(streamData *StreamData, payload string) {
 				continue
 			}
 
-			stream.packet = stream.packet + string(c)
+			stream.packetType = stream.packetType + string(c)
 
-			if len(stream.packet) > packetMaxLen {
-				fmt.Println("(!) Error parsing packet:", stream.packet)
+			if len(stream.packetType) > packetTypeMaxLen {
+				log.Println("(!) Error parsing packet type:", stream.packetType)
 
 				parseErrorsCounter.WithLabelValues(
 					streamData.ipv4.SrcIP.String(),
@@ -162,7 +163,7 @@ func parsePayload(streamData *StreamData, payload string) {
 }
 
 func pruneStaleStreams() {
-	fmt.Println("pruneStaleStreams")
+	log.Println("Prune stale streams")
 
 	streams.Range(func(k any, v any) bool {
 		stream := v.(*StreamState)
@@ -170,10 +171,10 @@ func pruneStaleStreams() {
 		stream.mux.Lock()
 
 		if time.Now().Sub(stream.lastAccessAt).Minutes() > staleStreamTTLMinutes {
-			streams.Delete(k)
-			fmt.Printf("(!) Stream %s DELETED\n", k.(string))
-
 			streamLiveSeconds.Observe(stream.lastAccessAt.Sub(stream.createdAt).Seconds())
+
+			streams.Delete(k)
+			log.Println("Stream DELETED:", k.(string))
 			streamsGauge.Dec()
 		}
 
@@ -181,6 +182,8 @@ func pruneStaleStreams() {
 
 		return true
 	})
+
+	log.Println("Prune stale streams OK")
 }
 
 func startPruningStaleStreams() {
@@ -197,7 +200,7 @@ func startPruningStaleStreams() {
 }
 
 func startMetricsExporting(metricsAddr string) {
-	fmt.Println("Metrics served on", metricsAddr)
+	log.Println("Serve prometheus metrics on", metricsAddr)
 
 	prometheus.MustRegister(packetCounter)
 	prometheus.MustRegister(parseErrorsCounter)
@@ -220,7 +223,7 @@ func main() {
 	startMetricsExporting(*metricsAddr)
 	startPruningStaleStreams()
 
-	fmt.Println("start OpenLive")
+	log.Printf("Start PCAP OpenLive: interface=%s, filter=%s\n", *iface, *pbfFilter)
 
 	pcapHandle, err := pcap.OpenLive(*iface, 65535, true, pcap.BlockForever)
 
@@ -257,7 +260,6 @@ func main() {
 			continue
 		}
 
-		fmt.Println("----------------------------------------------------------------------------------------------------")
 		streamData := &StreamData{
 			id:   fmt.Sprintf("%v:%v-%v:%v", ip4.SrcIP, tcp.SrcPort, ip4.DstIP, tcp.DstPort),
 			ipv4: ip4,
@@ -265,12 +267,7 @@ func main() {
 		}
 
 		payload := string(app.Payload())
-
-		fmt.Println(streamData.id)
-		fmt.Println(payload)
-
 		parsePayload(streamData, payload)
-
 		totalRawPackets.Inc()
 	}
 }
