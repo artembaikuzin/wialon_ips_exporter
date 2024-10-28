@@ -23,12 +23,6 @@ const (
 	StreamSkipMessage
 )
 
-type StreamData struct {
-	id   string
-	ipv4 *layers.IPv4
-	tcp  *layers.TCP
-}
-
 type StreamState struct {
 	state      int
 	packetType string
@@ -36,6 +30,9 @@ type StreamState struct {
 	createdAt    time.Time
 	lastAccessAt time.Time
 	mux          sync.Mutex
+
+	ipv4 *layers.IPv4
+	tcp  *layers.TCP
 }
 
 var streams sync.Map
@@ -92,8 +89,13 @@ func packetTypeValid(value string) bool {
 // # - separator
 // msg - message
 // \r\n - 0x0d0a
-func parsePayload(streamData *StreamData, payload string) {
-	s, loaded := streams.LoadOrStore(streamData.id, &StreamState{})
+func parsePayload(ipv4 *layers.IPv4, tcp *layers.TCP, payload []byte) {
+	streamId := fmt.Sprintf("%v:%v-%v:%v", ipv4.SrcIP, tcp.SrcPort, ipv4.DstIP, tcp.DstPort)
+
+	s, loaded := streams.LoadOrStore(
+		streamId,
+		&StreamState{createdAt: time.Now(), ipv4: ipv4, tcp: tcp})
+
 	stream := s.(*StreamState)
 
 	stream.mux.Lock()
@@ -101,13 +103,12 @@ func parsePayload(streamData *StreamData, payload string) {
 
 	stream.lastAccessAt = time.Now()
 	if !loaded {
-		stream.createdAt = time.Now()
 		streamsGauge.Inc()
 
-		log.Println("Stream ADDED:", streamData.id)
+		log.Println("Stream ADDED:", streamId)
 	}
 
-	for _, c := range payload {
+	for _, c := range string(payload) {
 		switch stream.state {
 		case StreamStart:
 			if c == '#' {
@@ -121,8 +122,8 @@ func parsePayload(streamData *StreamData, payload string) {
 					log.Println("(!) Invalid packet type:", stream.packetType)
 
 					parseErrorsCounter.WithLabelValues(
-						streamData.ipv4.SrcIP.String(),
-						streamData.ipv4.DstIP.String(),
+						ipv4.SrcIP.String(),
+						ipv4.DstIP.String(),
 					).Inc()
 
 					stream.state = StreamSkipMessage
@@ -132,8 +133,8 @@ func parsePayload(streamData *StreamData, payload string) {
 
 				packetCounter.WithLabelValues(
 					stream.packetType,
-					streamData.ipv4.SrcIP.String(),
-					streamData.ipv4.DstIP.String(),
+					ipv4.SrcIP.String(),
+					ipv4.DstIP.String(),
 				).Inc()
 
 				stream.state = StreamSkipMessage
@@ -147,8 +148,8 @@ func parsePayload(streamData *StreamData, payload string) {
 				log.Println("(!) Error parsing packet type:", stream.packetType)
 
 				parseErrorsCounter.WithLabelValues(
-					streamData.ipv4.SrcIP.String(),
-					streamData.ipv4.DstIP.String(),
+					ipv4.SrcIP.String(),
+					ipv4.DstIP.String(),
 				).Inc()
 
 				stream.state = StreamStart
@@ -262,14 +263,7 @@ func main() {
 			continue
 		}
 
-		streamData := &StreamData{
-			id:   fmt.Sprintf("%v:%v-%v:%v", ip4.SrcIP, tcp.SrcPort, ip4.DstIP, tcp.DstPort),
-			ipv4: ip4,
-			tcp:  tcp,
-		}
-
-		payload := string(app.Payload())
-		parsePayload(streamData, payload)
+		parsePayload(ip4, tcp, app.Payload())
 		totalRawPackets.Inc()
 	}
 }
