@@ -12,6 +12,7 @@ import (
 
 type StreamParser struct {
 	metrics *metrics.PrometheusMetrics
+	streams *sync.Map
 }
 
 type StreamParserer interface {
@@ -19,16 +20,18 @@ type StreamParserer interface {
 }
 
 func NewStreamParser(metrics metrics.PrometheusMetricser) *StreamParser {
-	return &StreamParser{metrics: metrics.GetMetrics()}
+	return &StreamParser{metrics: metrics.GetMetrics(), streams: &sync.Map{}}
 }
 
 const (
 	streamStart = iota
 	streamReadPacketType
 	streamSkipMessage
+	streamInvalidPacketType
+	streamErrorPacketType
 )
 
-type streamState struct {
+type StreamState struct {
 	state      int
 	packetType string
 
@@ -36,8 +39,6 @@ type streamState struct {
 	lastAccessAt time.Time
 	mux          sync.Mutex
 }
-
-var streams sync.Map
 
 // Wialon IPS 1.0 packet types: https://extapi.wialon.com/hw/cfg/Wialon%20IPS_en.pdf
 var clientPackets = []string{"L", "D", "P", "SD", "B", "I"}
@@ -58,11 +59,11 @@ const staleStreamTTLMinutes = 5.0
 // msg - message
 // \r\n - 0x0d0a
 func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, dstPort uint16, payload []byte) {
-	streamId := fmt.Sprintf("%v:%v-%v:%v", srcIp, srcPort, dstIp, dstPort)
+	streamId := i.streamId(srcIp, srcPort, dstIp, dstPort)
 
-	s, loaded := streams.LoadOrStore(streamId, &streamState{createdAt: time.Now()})
+	s, loaded := i.streams.LoadOrStore(streamId, &StreamState{createdAt: time.Now()})
 
-	stream := s.(*streamState)
+	stream := s.(*StreamState)
 
 	stream.mux.Lock()
 	defer stream.mux.Unlock()
@@ -77,7 +78,7 @@ func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, d
 
 	for _, c := range string(payload) {
 		switch stream.state {
-		case streamStart:
+		case streamStart, streamInvalidPacketType, streamErrorPacketType:
 			if c == '#' {
 				stream.state = streamReadPacketType
 				stream.packetType = ""
@@ -89,7 +90,7 @@ func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, d
 					log.Println("(!) Invalid packet type:", stream.packetType)
 
 					i.metrics.ParseErrorsCounter.WithLabelValues(srcIp, dstIp).Inc()
-					stream.state = streamSkipMessage
+					stream.state = streamInvalidPacketType
 
 					continue
 				}
@@ -106,7 +107,7 @@ func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, d
 				log.Println("(!) Error parsing packet type:", stream.packetType)
 
 				i.metrics.ParseErrorsCounter.WithLabelValues(srcIp, dstIp).Inc()
-				stream.state = streamStart
+				stream.state = streamErrorPacketType
 			}
 
 		case streamSkipMessage:
@@ -115,6 +116,10 @@ func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, d
 			}
 		}
 	}
+}
+
+func (i StreamParser) streamId(srcIp string, srcPort uint16, dstIp string, dstPort uint16) string {
+	return fmt.Sprintf("%v:%v-%v:%v", srcIp, srcPort, dstIp, dstPort)
 }
 
 func (i StreamParser) StartPruningStaleStreams() {
@@ -139,8 +144,8 @@ func (i StreamParser) packetTypeValid(value string) bool {
 func (i StreamParser) pruneStaleStreams() {
 	log.Println("Prune stale streams")
 
-	streams.Range(func(k any, v any) bool {
-		stream := v.(*streamState)
+	i.streams.Range(func(k any, v any) bool {
+		stream := v.(*StreamState)
 
 		stream.mux.Lock()
 
@@ -148,7 +153,7 @@ func (i StreamParser) pruneStaleStreams() {
 			livedSeconds := stream.lastAccessAt.Sub(stream.createdAt).Seconds()
 			i.metrics.StreamLiveSeconds.Observe(livedSeconds)
 
-			streams.Delete(k)
+			i.streams.Delete(k)
 
 			log.Printf("Stream DELETED: %s, lived for %fs", k.(string), livedSeconds)
 			i.metrics.StreamsGauge.Dec()
