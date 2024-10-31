@@ -30,5 +30,11 @@ jobs:
     - name: Build
       run: go build -v ./...
 
+    - name: Upload binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: wialon_ips_exporter
+        path: wialon_ips_exporter
+
     - name: Test
       run: go test -v ./...
