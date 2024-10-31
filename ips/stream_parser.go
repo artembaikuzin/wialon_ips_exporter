@@ -118,10 +118,6 @@ func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, d
 	}
 }
 
-func (i StreamParser) streamId(srcIp string, srcPort uint16, dstIp string, dstPort uint16) string {
-	return fmt.Sprintf("%v:%v-%v:%v", srcIp, srcPort, dstIp, dstPort)
-}
-
 func (i StreamParser) StartPruningStaleStreams() {
 	ticker := time.NewTicker(30 * time.Second)
 
@@ -133,6 +129,10 @@ func (i StreamParser) StartPruningStaleStreams() {
 			}
 		}
 	}()
+}
+
+func (i StreamParser) streamId(srcIp string, srcPort uint16, dstIp string, dstPort uint16) string {
+	return fmt.Sprintf("%v:%v-%v:%v", srcIp, srcPort, dstIp, dstPort)
 }
 
 func (i StreamParser) packetTypeValid(value string) bool {
