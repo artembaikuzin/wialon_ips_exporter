@@ -28,13 +28,19 @@ jobs:
       run: go get .
 
     - name: Build
-      run: go build -v ./...
+      run: |
+        go build -v ./...
+        ls -alh
+        pwd
+
+    - name: Test
+      run: |
+        go test -v ./...
+        ls -alh
+        pwd
 
     - name: Upload binary
       uses: actions/upload-artifact@v4
       with:
         name: wialon_ips_exporter
         path: wialon_ips_exporter
-
-    - name: Test
-      run: go test -v ./...
