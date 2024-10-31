@@ -43,7 +43,7 @@ wialon_ips_stream_live_seconds_count 27
 wialon_ips_streams_size 298
 ```
 
-## Install
+## Build and install from sources
 
 ```bash
 apt-get update
@@ -53,7 +53,8 @@ git clone git@github.com:artembaikuzin/wialon_ips_exporter.git
 
 cd wialon_ips_exporter
 
-go build .
+make test
+make build
 
 mv wialon_ips_exporter /usr/local/bin/wialon_ips_exporter
 
