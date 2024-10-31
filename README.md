@@ -1,5 +1,7 @@
 # wialon_ips_exporter
 
+![go workflow](https://github.com/artembaikuzin/wialon_ips_exporter/actions/workflows/go.yml/badge.svg?branch=main)
+
 Wialon IPS 1.0 protocol [PCAP based](https://github.com/gopacket/gopacket) Prometheus metrics exporter.
 
 Service traces raw packets using pcap library, parses packets, and then serves metrics:
