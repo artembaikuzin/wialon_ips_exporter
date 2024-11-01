@@ -65,5 +65,11 @@ func (m PrometheusMetrics) StartMetricsExporting(metricsAddr string) {
 
 	http.Handle("/metrics", promhttp.Handler())
 
-	go http.ListenAndServe(metricsAddr, nil)
+	go func() {
+		err := http.ListenAndServe(metricsAddr, nil)
+
+		if err != nil {
+			panic(err)
+		}
+	}()
 }
