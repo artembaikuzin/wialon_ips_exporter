@@ -9,13 +9,12 @@ import (
 )
 
 type PrometheusMetricser interface {
-	GetMetrics() *PrometheusMetrics
+	Metrics() *PrometheusMetrics
 }
 
 type PrometheusMetrics struct {
 	PacketCounter      *prometheus.CounterVec
 	ParseErrorsCounter *prometheus.CounterVec
-	StreamLiveSeconds  prometheus.Summary
 	StreamsGauge       prometheus.Gauge
 	TotalRawPackets    prometheus.Counter
 }
@@ -32,12 +31,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			Help: "Total number of parse errors",
 		}, []string{"src_ip", "dst_ip"}),
 
-		StreamLiveSeconds: prometheus.NewSummary(prometheus.SummaryOpts{
-			Name:       "wialon_ips_stream_live_seconds",
-			Help:       "Time stream lives",
-			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.95: 0.005, 0.99: 0.001},
-		}),
-
 		StreamsGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "wialon_ips_streams_size",
 			Help: "Number of currently active streams",
@@ -50,7 +43,7 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 	}
 }
 
-func (m PrometheusMetrics) GetMetrics() *PrometheusMetrics {
+func (m PrometheusMetrics) Metrics() *PrometheusMetrics {
 	return &m
 }
 
@@ -59,7 +52,6 @@ func (m PrometheusMetrics) StartMetricsExporting(metricsAddr string) {
 
 	prometheus.MustRegister(m.PacketCounter)
 	prometheus.MustRegister(m.ParseErrorsCounter)
-	prometheus.MustRegister(m.StreamLiveSeconds)
 	prometheus.MustRegister(m.StreamsGauge)
 	prometheus.MustRegister(m.TotalRawPackets)
 

@@ -16,7 +16,7 @@ type PcapDump struct {
 }
 
 func NewPcapDump(metrics metrics.PrometheusMetricser, streamParser ips.StreamParserer) *PcapDump {
-	return &PcapDump{metrics: metrics.GetMetrics(), streamParser: streamParser}
+	return &PcapDump{metrics: metrics.Metrics(), streamParser: streamParser}
 }
 
 func (p PcapDump) Run(iface string, pbfFilter string) {

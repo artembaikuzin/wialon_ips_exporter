@@ -2,11 +2,12 @@ package ips
 
 import (
 	"testing"
+	"time"
 
 	"github.com/artembaikuzin/wialon_ips_exporter/metrics"
 )
 
-func TestParsePayload(t *testing.T) {
+func TestParsePayloadAndPruning(t *testing.T) {
 	streamParser := NewStreamParser(metrics.NewPrometheusMetrics())
 
 	testPackets := []struct {
@@ -64,5 +65,33 @@ func TestParsePayload(t *testing.T) {
 
 	if streamSize != 3 {
 		t.Fatalf("Invalid number of streams: expected=%d, got=%d", 3, streamSize)
+	}
+
+	streamId := streamParser.streamId("192.168.1.1", 20332, "77.74.56.123", 12345)
+
+	s, ok := streamParser.streams.Load(streamId)
+
+	if !ok {
+		t.Fatalf("Stream not found: %s", streamId)
+	}
+
+	stream := s.(*StreamState)
+	stream.lastAccessAt = time.Now().Add(-10 * time.Minute)
+	streamParser.pruneStaleStreams()
+
+	streamSize = 0
+	streamParser.streams.Range(func(key, value any) bool {
+		streamSize += 1
+		return true
+	})
+
+	if streamSize != 2 {
+		t.Fatalf("Invalid number of streams: expected=%d, got=%d", 2, streamSize)
+	}
+
+	_, ok = streamParser.streams.Load(streamId)
+
+	if ok {
+		t.Fatalf("Stream must be deleted: %s", streamId)
 	}
 }

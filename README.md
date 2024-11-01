@@ -30,20 +30,12 @@ wialon_ips_packets_total{dst_ip="77.74.12.123",src_ip="192.168.1.1",type="AL"} 3
 # HELP wialon_ips_raw_packets_total Total number of packets handled
 # TYPE wialon_ips_raw_packets_total counter
 wialon_ips_raw_packets_total 6125
-# HELP wialon_ips_stream_live_seconds Time stream lives
-# TYPE wialon_ips_stream_live_seconds summary
-wialon_ips_stream_live_seconds{quantile="0.5"} 0.163256668
-wialon_ips_stream_live_seconds{quantile="0.9"} 44.797984672
-wialon_ips_stream_live_seconds{quantile="0.95"} 45.078907945
-wialon_ips_stream_live_seconds{quantile="0.99"} 60.21588069
-wialon_ips_stream_live_seconds_sum 459.7408658289999
-wialon_ips_stream_live_seconds_count 27
 # HELP wialon_ips_streams_size Number of currently active streams
 # TYPE wialon_ips_streams_size gauge
 wialon_ips_streams_size 298
 ```
 
-## Build and install from sources
+## Build and install from source
 
 ```bash
 apt-get update
@@ -53,7 +45,6 @@ git clone git@github.com:artembaikuzin/wialon_ips_exporter.git
 
 cd wialon_ips_exporter
 
-make test
 make build
 
 mv wialon_ips_exporter /usr/local/bin/wialon_ips_exporter
