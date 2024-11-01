@@ -30,7 +30,12 @@ jobs:
     - name: Golangci-lint
       uses: golangci/golangci-lint-action@v6.1.1
 
-    - name: Test
+    - name: Vulnerability checks
+      run: |
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+        govulncheck ./...
+
+    - name: Tests
       run: make test
 
     - name: Build
