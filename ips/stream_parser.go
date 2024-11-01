@@ -123,10 +123,8 @@ func (i StreamParser) StartPruningStaleStreams() {
 
 	go func() {
 		for {
-			select {
-			case <-ticker.C:
-				i.pruneStaleStreams()
-			}
+			<-ticker.C
+			i.pruneStaleStreams()
 		}
 	}()
 }
@@ -149,7 +147,7 @@ func (i StreamParser) pruneStaleStreams() {
 
 		stream.mux.Lock()
 
-		if time.Now().Sub(stream.lastAccessAt).Minutes() > staleStreamTTLMinutes {
+		if time.Since(stream.lastAccessAt).Minutes() > staleStreamTTLMinutes {
 			livedSeconds := stream.lastAccessAt.Sub(stream.createdAt).Seconds()
 			i.metrics.StreamLiveSeconds.Observe(livedSeconds)
 
