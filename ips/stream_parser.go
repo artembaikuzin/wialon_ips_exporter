@@ -20,7 +20,7 @@ type StreamParserer interface {
 }
 
 func NewStreamParser(metrics metrics.PrometheusMetricser) *StreamParser {
-	return &StreamParser{metrics: metrics.GetMetrics(), streams: &sync.Map{}}
+	return &StreamParser{metrics: metrics.Metrics(), streams: &sync.Map{}}
 }
 
 const (
@@ -37,7 +37,7 @@ type StreamState struct {
 
 	createdAt    time.Time
 	lastAccessAt time.Time
-	mux          sync.Mutex
+	mu           sync.Mutex
 }
 
 // Wialon IPS 1.0 packet types: https://extapi.wialon.com/hw/cfg/Wialon%20IPS_en.pdf
@@ -65,8 +65,8 @@ func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, d
 
 	stream := s.(*StreamState)
 
-	stream.mux.Lock()
-	defer stream.mux.Unlock()
+	stream.mu.Lock()
+	defer stream.mu.Unlock()
 
 	stream.lastAccessAt = time.Now()
 
@@ -145,11 +145,10 @@ func (i StreamParser) pruneStaleStreams() {
 	i.streams.Range(func(k any, v any) bool {
 		stream := v.(*StreamState)
 
-		stream.mux.Lock()
+		stream.mu.Lock()
 
 		if time.Since(stream.lastAccessAt).Minutes() > staleStreamTTLMinutes {
 			livedSeconds := stream.lastAccessAt.Sub(stream.createdAt).Seconds()
-			i.metrics.StreamLiveSeconds.Observe(livedSeconds)
 
 			i.streams.Delete(k)
 
@@ -157,7 +156,7 @@ func (i StreamParser) pruneStaleStreams() {
 			i.metrics.StreamsGauge.Dec()
 		}
 
-		stream.mux.Unlock()
+		stream.mu.Unlock()
 
 		return true
 	})
