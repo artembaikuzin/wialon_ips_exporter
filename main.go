@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 
 	"github.com/artembaikuzin/wialon_ips_exporter/ips"
@@ -19,7 +20,10 @@ func main() {
 	prometheus.StartMetricsExporting(*metricsAddr)
 
 	streamParser := ips.NewStreamParser(prometheus)
-	streamParser.StartPruningStaleStreams()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	streamParser.StartPruningStaleStreams(ctx)
 
 	pcapDump := pcap.NewPcapDump(prometheus, streamParser)
 	pcapDump.Run(*iface, *pbfFilter)

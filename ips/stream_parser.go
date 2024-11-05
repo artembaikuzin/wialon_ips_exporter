@@ -1,6 +1,7 @@
 package ips
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"slices"
@@ -118,13 +119,17 @@ func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, d
 	}
 }
 
-func (i StreamParser) StartPruningStaleStreams() {
+func (i StreamParser) StartPruningStaleStreams(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 
 	go func() {
 		for {
-			<-ticker.C
-			i.pruneStaleStreams()
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				i.pruneStaleStreams()
+			}
 		}
 	}()
 }
