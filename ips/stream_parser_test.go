@@ -16,7 +16,7 @@ func TestParsePayloadAndPruning(t *testing.T) {
 		dstIp        string
 		dstPort      uint16
 		payload      string
-		expectState  int
+		expectState  streamState
 		expectPacket string
 	}{
 		{"192.168.1.1", 20332, "77.74.56.123", 12345, "", streamStart, ""},
@@ -46,7 +46,7 @@ func TestParsePayloadAndPruning(t *testing.T) {
 			t.Fatalf("Stream not found: %s", streamId)
 		}
 
-		stream := s.(*StreamState)
+		stream := s.(*Stream)
 
 		if stream.state != tt.expectState {
 			t.Fatalf("Invalid state for stream: %s, expected=%d, got=%d", streamId, tt.expectState, stream.state)
@@ -75,7 +75,7 @@ func TestParsePayloadAndPruning(t *testing.T) {
 		t.Fatalf("Stream not found: %s", streamId)
 	}
 
-	stream := s.(*StreamState)
+	stream := s.(*Stream)
 	stream.lastAccessAt = time.Now().Add(-10 * time.Minute)
 	streamParser.pruneStaleStreams()
 
