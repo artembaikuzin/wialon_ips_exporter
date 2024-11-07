@@ -38,6 +38,9 @@ type Stream struct {
 	state      streamState
 	packetType string
 
+	srcIp string
+	dstIp string
+
 	createdAt    time.Time
 	lastAccessAt time.Time
 	mu           sync.Mutex
@@ -64,19 +67,22 @@ const staleStreamTTLMinutes = 5.0
 func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, dstPort uint16, payload []byte) {
 	streamId := i.streamId(srcIp, srcPort, dstIp, dstPort)
 
-	s, loaded := i.streams.LoadOrStore(streamId, &Stream{createdAt: time.Now()})
+	s, loaded := i.streams.LoadOrStore(
+		streamId,
+		&Stream{srcIp: srcIp, dstIp: dstIp, createdAt: time.Now(), lastAccessAt: time.Now()})
 
 	stream := s.(*Stream)
 
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
 
-	stream.lastAccessAt = time.Now()
-
 	if !loaded {
 		i.metrics.StreamsGauge.Inc()
+		i.metrics.StreamsBySrcIp.WithLabelValues(srcIp, dstIp).Inc()
 
 		log.Println("Stream ADDED:", streamId)
+	} else {
+		stream.lastAccessAt = time.Now()
 	}
 
 	for _, c := range string(payload) {
@@ -160,6 +166,7 @@ func (i StreamParser) pruneStaleStreams() {
 			i.streams.Delete(k)
 
 			log.Printf("Stream DELETED: %s, lived for %fs", k.(string), livedSeconds)
+			i.metrics.StreamsBySrcIp.WithLabelValues(stream.srcIp, stream.dstIp).Dec()
 			i.metrics.StreamsGauge.Dec()
 		}
 
