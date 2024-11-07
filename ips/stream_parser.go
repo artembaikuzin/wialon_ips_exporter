@@ -24,16 +24,18 @@ func NewStreamParser(metrics metrics.PrometheusMetricser) *StreamParser {
 	return &StreamParser{metrics: metrics.Metrics(), streams: &sync.Map{}}
 }
 
+type streamState int
+
 const (
-	streamStart = iota
+	streamStart streamState = iota
 	streamReadPacketType
 	streamSkipMessage
 	streamInvalidPacketType
 	streamErrorPacketType
 )
 
-type StreamState struct {
-	state      int
+type Stream struct {
+	state      streamState
 	packetType string
 
 	createdAt    time.Time
@@ -62,9 +64,9 @@ const staleStreamTTLMinutes = 5.0
 func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, dstPort uint16, payload []byte) {
 	streamId := i.streamId(srcIp, srcPort, dstIp, dstPort)
 
-	s, loaded := i.streams.LoadOrStore(streamId, &StreamState{createdAt: time.Now()})
+	s, loaded := i.streams.LoadOrStore(streamId, &Stream{createdAt: time.Now()})
 
-	stream := s.(*StreamState)
+	stream := s.(*Stream)
 
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
@@ -148,7 +150,7 @@ func (i StreamParser) pruneStaleStreams() {
 	log.Println("Prune stale streams")
 
 	i.streams.Range(func(k any, v any) bool {
-		stream := v.(*StreamState)
+		stream := v.(*Stream)
 
 		stream.mu.Lock()
 
