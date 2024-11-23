@@ -1,27 +1,22 @@
-package ips
+package main
 
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"slices"
 	"sync"
 	"time"
-
-	"github.com/artembaikuzin/wialon_ips_exporter/metrics"
 )
 
 type StreamParser struct {
-	metrics *metrics.PrometheusMetrics
+	log     *slog.Logger
+	metrics *PrometheusMetrics
 	streams *sync.Map
 }
 
-type StreamParserer interface {
-	ParsePayload(srcIp string, srcPort uint16, dstIp string, dstPort uint16, payload []byte)
-}
-
-func NewStreamParser(metrics metrics.PrometheusMetricser) *StreamParser {
-	return &StreamParser{metrics: metrics.Metrics(), streams: &sync.Map{}}
+func NewStreamParser(log *slog.Logger, metrics *PrometheusMetrics) *StreamParser {
+	return &StreamParser{log: log, metrics: metrics, streams: &sync.Map{}}
 }
 
 type streamState int
@@ -80,7 +75,7 @@ func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, d
 		i.metrics.StreamsGauge.Inc()
 		i.metrics.StreamsBySrcIp.WithLabelValues(srcIp, dstIp).Inc()
 
-		log.Println("Stream ADDED:", streamId)
+		i.log.Debug("Stream ADDED", "streamId", streamId)
 	} else {
 		stream.lastAccessAt = time.Now()
 	}
@@ -96,7 +91,7 @@ func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, d
 		case streamReadPacketType:
 			if c == '#' {
 				if !i.packetTypeValid(stream.packetType) {
-					log.Println("(!) Invalid packet type:", stream.packetType)
+					i.log.Error("Invalid packet type", "stream.packetType", stream.packetType, "streamId", streamId)
 
 					i.metrics.ParseErrorsCounter.WithLabelValues(srcIp, dstIp).Inc()
 					stream.state = streamInvalidPacketType
@@ -113,7 +108,7 @@ func (i StreamParser) ParsePayload(srcIp string, srcPort uint16, dstIp string, d
 			stream.packetType = stream.packetType + string(c)
 
 			if len(stream.packetType) > packetTypeMaxLen {
-				log.Println("(!) Error parsing packet type:", stream.packetType)
+				i.log.Error("Error parsing packet type", "stream.packetType", stream.packetType, "streamId", streamId)
 
 				i.metrics.ParseErrorsCounter.WithLabelValues(srcIp, dstIp).Inc()
 				stream.state = streamErrorPacketType
@@ -153,7 +148,7 @@ func (i StreamParser) packetTypeValid(value string) bool {
 }
 
 func (i StreamParser) pruneStaleStreams() {
-	log.Println("Prune stale streams")
+	i.log.Debug("Pruning stale streams")
 
 	i.streams.Range(func(k any, v any) bool {
 		stream := v.(*Stream)
@@ -165,7 +160,8 @@ func (i StreamParser) pruneStaleStreams() {
 
 			i.streams.Delete(k)
 
-			log.Printf("Stream DELETED: %s, lived for %fs", k.(string), livedSeconds)
+			i.log.Debug("Stream DELETED", "streamId", k.(string), "livedSeconds", livedSeconds)
+
 			i.metrics.StreamsBySrcIp.WithLabelValues(stream.srcIp, stream.dstIp).Dec()
 			i.metrics.StreamsGauge.Dec()
 		}
@@ -175,5 +171,5 @@ func (i StreamParser) pruneStaleStreams() {
 		return true
 	})
 
-	log.Println("Prune stale streams OK")
+	i.log.Debug("Pruning stale streams OK")
 }
