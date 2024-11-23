@@ -39,7 +39,7 @@ wialon_ips_parse_errors_total{dst_ip="192.168.1.1",src_ip="188.123.45.67"} 1
 
 ## Install
 
-Build locally on the target host:
+Build locally on wialon production host:
 
 ```bash
 apt-get update
