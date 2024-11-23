@@ -1,5 +1,5 @@
 build:
-	go build .
+	go build -ldflags "-X main.version=$(shell cat VERSION)" .
 
 run:
 	go run .
