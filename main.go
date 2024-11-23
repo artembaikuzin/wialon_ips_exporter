@@ -7,6 +7,8 @@ import (
 	"os"
 )
 
+var version = "dev"
+
 func main() {
 	var iface = flag.String("i", "eth0", "Interface")
 	var pbfFilter = flag.String("filter", "tcp port 20332", "BPF filter")
@@ -15,6 +17,8 @@ func main() {
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	log.Info("Wialon IPS exporter", "version", version)
 
 	prometheus := NewPrometheusMetrics(log)
 	prometheus.StartMetricsExporting(*metricsAddr)
