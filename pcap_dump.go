@@ -1,22 +1,20 @@
-package pcap
+package main
 
 import (
 	"log"
 
-	"github.com/artembaikuzin/wialon_ips_exporter/ips"
-	"github.com/artembaikuzin/wialon_ips_exporter/metrics"
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
 	"github.com/gopacket/gopacket/pcap"
 )
 
 type PcapDump struct {
-	metrics      *metrics.PrometheusMetrics
-	streamParser ips.StreamParserer
+	metrics      *PrometheusMetrics
+	streamParser *StreamParser
 }
 
-func NewPcapDump(metrics metrics.PrometheusMetricser, streamParser ips.StreamParserer) *PcapDump {
-	return &PcapDump{metrics: metrics.Metrics(), streamParser: streamParser}
+func NewPcapDump(metrics *PrometheusMetrics, streamParser *StreamParser) *PcapDump {
+	return &PcapDump{metrics: metrics, streamParser: streamParser}
 }
 
 func (p PcapDump) Run(iface string, pbfFilter string) {
@@ -57,8 +55,13 @@ func (p PcapDump) Run(iface string, pbfFilter string) {
 			continue
 		}
 
-		p.streamParser.ParsePayload(ip4.SrcIP.String(), uint16(tcp.SrcPort), ip4.DstIP.String(), uint16(tcp.DstPort),
+		p.streamParser.ParsePayload(
+			ip4.SrcIP.String(),
+			uint16(tcp.SrcPort),
+			ip4.DstIP.String(),
+			uint16(tcp.DstPort),
 			app.Payload())
+
 		p.metrics.TotalRawPackets.Inc()
 	}
 }

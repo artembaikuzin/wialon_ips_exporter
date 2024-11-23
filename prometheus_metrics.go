@@ -1,4 +1,4 @@
-package metrics
+package main
 
 import (
 	"log"
@@ -7,10 +7,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
-
-type PrometheusMetricser interface {
-	Metrics() *PrometheusMetrics
-}
 
 type PrometheusMetrics struct {
 	PacketCounter      *prometheus.CounterVec
@@ -47,10 +43,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			Help: "Total number of packets handled",
 		}),
 	}
-}
-
-func (m PrometheusMetrics) Metrics() *PrometheusMetrics {
-	return &m
 }
 
 func (m PrometheusMetrics) StartMetricsExporting(metricsAddr string) {

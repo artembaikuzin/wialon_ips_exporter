@@ -1,4 +1,4 @@
-package ips
+package main
 
 import (
 	"context"
@@ -7,21 +7,15 @@ import (
 	"slices"
 	"sync"
 	"time"
-
-	"github.com/artembaikuzin/wialon_ips_exporter/metrics"
 )
 
 type StreamParser struct {
-	metrics *metrics.PrometheusMetrics
+	metrics *PrometheusMetrics
 	streams *sync.Map
 }
 
-type StreamParserer interface {
-	ParsePayload(srcIp string, srcPort uint16, dstIp string, dstPort uint16, payload []byte)
-}
-
-func NewStreamParser(metrics metrics.PrometheusMetricser) *StreamParser {
-	return &StreamParser{metrics: metrics.Metrics(), streams: &sync.Map{}}
+func NewStreamParser(metrics *PrometheusMetrics) *StreamParser {
+	return &StreamParser{metrics: metrics, streams: &sync.Map{}}
 }
 
 type streamState int

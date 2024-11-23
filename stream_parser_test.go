@@ -1,14 +1,12 @@
-package ips
+package main
 
 import (
 	"testing"
 	"time"
-
-	"github.com/artembaikuzin/wialon_ips_exporter/metrics"
 )
 
 func TestParsePayloadAndPruning(t *testing.T) {
-	streamParser := NewStreamParser(metrics.NewPrometheusMetrics())
+	streamParser := NewStreamParser(NewPrometheusMetrics())
 
 	testPackets := []struct {
 		srcIp        string
