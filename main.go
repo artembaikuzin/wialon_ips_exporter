@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"flag"
+	"log/slog"
+	"os"
 )
 
 func main() {
@@ -12,15 +14,17 @@ func main() {
 
 	flag.Parse()
 
-	prometheus := NewPrometheusMetrics()
+	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	prometheus := NewPrometheusMetrics(log)
 	prometheus.StartMetricsExporting(*metricsAddr)
 
-	streamParser := NewStreamParser(prometheus)
+	streamParser := NewStreamParser(log, prometheus)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	streamParser.StartPruningStaleStreams(ctx)
 
-	pcapDump := NewPcapDump(prometheus, streamParser)
+	pcapDump := NewPcapDump(log, prometheus, streamParser)
 	pcapDump.Run(*iface, *pbfFilter)
 }

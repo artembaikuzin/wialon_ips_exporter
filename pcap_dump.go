@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/gopacket/gopacket"
 	"github.com/gopacket/gopacket/layers"
@@ -9,21 +9,23 @@ import (
 )
 
 type PcapDump struct {
+	log          *slog.Logger
 	metrics      *PrometheusMetrics
 	streamParser *StreamParser
 }
 
-func NewPcapDump(metrics *PrometheusMetrics, streamParser *StreamParser) *PcapDump {
-	return &PcapDump{metrics: metrics, streamParser: streamParser}
+func NewPcapDump(log *slog.Logger, metrics *PrometheusMetrics, streamParser *StreamParser) *PcapDump {
+	return &PcapDump{log: log, metrics: metrics, streamParser: streamParser}
 }
 
 func (p PcapDump) Run(iface string, pbfFilter string) {
-	log.Printf("Start PCAP OpenLive: interface=%s, filter=%s\n", iface, pbfFilter)
+	p.log.Info("Start PCAP OpenLive", "iface", iface, "pbfFilter", pbfFilter)
 
 	pcapHandle, err := pcap.OpenLive(iface, 65535, true, pcap.BlockForever)
 
 	if err != nil {
-		panic(err)
+		p.log.Error("pcap.OpenLive error", "err", err)
+		return
 	}
 
 	defer pcapHandle.Close()
@@ -31,7 +33,8 @@ func (p PcapDump) Run(iface string, pbfFilter string) {
 	err = pcapHandle.SetBPFFilter(pbfFilter)
 
 	if err != nil {
-		panic(err)
+		p.log.Error("SetBPFFilter error", "err", err)
+		return
 	}
 
 	packetSource := gopacket.NewPacketSource(pcapHandle, pcapHandle.LinkType())

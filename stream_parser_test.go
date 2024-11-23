@@ -1,12 +1,14 @@
 package main
 
 import (
+	"log/slog"
 	"testing"
 	"time"
 )
 
 func TestParsePayloadAndPruning(t *testing.T) {
-	streamParser := NewStreamParser(NewPrometheusMetrics())
+	log := slog.Default()
+	streamParser := NewStreamParser(log, NewPrometheusMetrics(log))
 
 	testPackets := []struct {
 		srcIp        string

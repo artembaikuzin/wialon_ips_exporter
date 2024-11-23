@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -9,6 +9,7 @@ import (
 )
 
 type PrometheusMetrics struct {
+	log                *slog.Logger
 	PacketCounter      *prometheus.CounterVec
 	ParseErrorsCounter *prometheus.CounterVec
 	StreamsGauge       prometheus.Gauge
@@ -16,8 +17,10 @@ type PrometheusMetrics struct {
 	TotalRawPackets    prometheus.Counter
 }
 
-func NewPrometheusMetrics() *PrometheusMetrics {
+func NewPrometheusMetrics(log *slog.Logger) *PrometheusMetrics {
 	return &PrometheusMetrics{
+		log: log,
+
 		PacketCounter: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "wialon_ips_packets_total",
 			Help: "Total number of IPS packets",
@@ -46,7 +49,7 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 }
 
 func (m PrometheusMetrics) StartMetricsExporting(metricsAddr string) {
-	log.Println("Serve prometheus metrics on", metricsAddr)
+	m.log.Info("Serving prometheus metrics", "metricsAddr", metricsAddr)
 
 	prometheus.MustRegister(m.PacketCounter)
 	prometheus.MustRegister(m.ParseErrorsCounter)
@@ -57,10 +60,8 @@ func (m PrometheusMetrics) StartMetricsExporting(metricsAddr string) {
 	http.Handle("/metrics", promhttp.Handler())
 
 	go func() {
-		err := http.ListenAndServe(metricsAddr, nil)
-
-		if err != nil {
-			panic(err)
+		if err := http.ListenAndServe(metricsAddr, nil); err != http.ErrServerClosed {
+			m.log.Error("Prometheus http server error", "err", err)
 		}
 	}()
 }
