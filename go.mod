@@ -1,6 +1,6 @@
 module github.com/artembaikuzin/wialon_ips_exporter
 
-go 1.23.2
+go 1.25.5
 
 require (
 	github.com/gopacket/gopacket v1.3.0
